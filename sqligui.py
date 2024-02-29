@@ -1,5 +1,4 @@
 import requests
-import sys
 import urllib3
 from bs4 import BeautifulSoup
 import re
@@ -51,7 +50,7 @@ def try_login(url, method,post_data):
             print(data)
         res = perform_request(url,sql_payload, method, data)
     
-    except:
+    finally:
         post_data[list(post_data.keys())[0]] = sql_payload
         print(post_data)
         res = perform_request(url, sql_payload,method, post_data)
@@ -200,8 +199,9 @@ def main():
                 result_text.insert(tk.END, "Please enter post data)\n")
             try:
                 post_data = {key: value for key, value in (item.split('=') for item in data.split('&'))}
+                print(post_data)
                 if 'username' in post_data and 'password' in post_data:
-                    return True, post_data
+                    pass
                 
             except:
                 result_text.insert(tk.END, "Incorrect Post format (e.g username=user&password=pass)\n")
@@ -282,8 +282,8 @@ def main():
 
     file_menu.add_command(label="Exit", command=root.destroy)
 
-
-
+    
+    root.resizable(False, False)
 
     root.mainloop()
 
