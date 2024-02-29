@@ -148,7 +148,8 @@ def main():
     output = args.file
     url = args.url
     data = args.post_data
-
+    if not url:
+        return
     method = 'GET' if not args.method else 'POST'
     if method.upper() == 'POST' and data is None:
         print("Please provide POST data for the selected method.")
